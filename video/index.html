@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Video · When Does KV Cache Compression Pay?</title>
+<style>
+  html, body { margin: 0; background: #1a1a19; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #wrap { width: 100vw; height: calc(100vh - 56px); display: grid; place-items: center; }
+  #stage { width: min(100vw, calc((100vh - 56px) * 16 / 9)); height: auto; display: block; background: #f9f9f7; }
+  #ctl { height: 56px; display: flex; align-items: center; gap: 14px; padding: 0 18px; color: #c3c2b7; font-size: 14px; }
+  #ctl button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid #383835; background: #232321; color: #fff; cursor: pointer; }
+  #ctl input { flex: 1; accent-color: #3987e5; }
+  #ctl output { font-variant-numeric: tabular-nums; min-width: 110px; }
+  body.render { background: #f9f9f7; }
+  body.render #ctl { display: none; }
+  body.render #wrap { width: 1920px; height: 1080px; }
+  body.render #stage { width: 1920px; height: 1080px; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <svg id="stage" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="10" height="10" fill="rgba(42,120,214,0.12)"/>
+        <rect width="3" height="10" fill="#2a78d6"/>
+      </pattern>
+    </defs>
+    <rect width="1920" height="1080" fill="#f9f9f7"/>
+    <g id="root"></g>
+  </svg>
+</div>
+<div id="ctl">
+  <button id="play" type="button">▶ Play</button>
+  <input id="scrub" type="range" min="0" max="1000" value="0">
+  <output id="time">0.0 s</output>
+</div>
+<script src="video.js"></script>
+</body>
+</html>

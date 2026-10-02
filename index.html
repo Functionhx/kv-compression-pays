@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>When Does KV Cache Compression Pay? · GPC 2026</title>
+  <meta name="description" content="Fewer bytes are neither automatically faster nor automatically safe. A quality- and cost-aware runtime framework that decides when KV cache compression is worth deploying in cloud LLM serving.">
+  <meta property="og:title" content="When Does KV Cache Compression Pay?">
+  <meta property="og:description" content="Compression pays only above a link- and size-dependent crossover, and the admissible ratio is model-dependent. Treat KV compression as a deployment decision.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://functionhx.github.io/kv-compression-pays/">
+  <meta property="og:image" content="https://functionhx.github.io/kv-compression-pays/static/og.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://functionhx.github.io/kv-compression-pays/static/og.jpg">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><text x='16' y='22' font-size='15' font-family='system-ui' font-weight='700' text-anchor='middle' fill='white'>KV</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<nav class="topnav" aria-label="Sections">
+  <div class="topnav-inner">
+    <a class="brand" href="#top">KV&nbsp;Compression&nbsp;Pay?</a>
+    <div class="navlinks">
+      <a href="#abstract">Abstract</a>
+      <a href="#video">Video</a>
+      <a href="#method">Method</a>
+      <a href="#crossover">Crossover</a>
+      <a href="#quality">Quality</a>
+      <a href="#resolver">Resolver</a>
+      <a href="#future">Future Work</a>
+      <a href="#bibtex">BibTeX</a>
+    </div>
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode">◐</button>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <p class="venue">GPC 2026 · Cloud Computing Track</p>
+    <h1>When Does KV Cache Compression Pay?</h1>
+    <p class="subtitle">A Quality- and Cost-Aware Runtime Framework for Cloud LLM Serving</p>
+    <p class="authors"><span>Yuchen Fan</span></p>
+    <p class="affil">Beijing Institute of Technology</p>
+    <div class="buttons">
+      <a class="btn primary" href="static/paper.pdf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm0 2.5L17.5 8H14zM8 13h8v1.6H8zm0 3.2h8v1.6H8zm0-6.4h4v1.6H8z"/></svg>Paper</a>
+      <a class="btn" href="#" aria-disabled="true" title="arXiv link coming soon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4.2l3.8 6 3.8-6H20l-5.9 8.6L20 20h-4.2L12 14.3 8.2 20H4l5.9-7.4z"/></svg>arXiv (soon)</a>
+      <a class="btn" href="#" aria-disabled="true" title="Code release coming soon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5z"/></svg>Code (soon)</a>
+    </div>
+
+    <div class="hero-anim">
+      <div id="heroAnim"></div>
+      <button type="button" id="heroPlay" class="anim-btn" aria-pressed="false">❚❚ Pause</button>
+    </div>
+
+    <p class="tldr"><strong>TL;DR</strong> Shipping fewer KV bytes is neither automatically <em>faster</em> nor automatically <em>safe</em>.
+      Fixed codec costs create a link- and size-dependent crossover, and model-dependent KV magnitudes cap the admissible ratio.
+      We turn measured quality, transport, and memory profiles into a deployment verdict: a feasible operating point, <em>fp16</em>, or explicit infeasibility.</p>
+
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-label">Same-GPU path crossover</div>
+        <div class="stat-value">S* = ∞</div>
+        <div class="stat-note">compression never pays</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">PCIe crossover</div>
+        <div class="stat-value">1.06–2.08 MB</div>
+        <div class="stat-note">inside the 256 KB–4 MB chunks disaggregated serving moves</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Dual-GPU P2P crossover</div>
+        <div class="stat-value">23–46 MB</div>
+        <div class="stat-note">same thesis, very different threshold</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Uniform INT4 on Qwen2.5-3B</div>
+        <div class="stat-value">ΔPPL ≈ 12462×</div>
+        <div class="stat-note">the same codec is PPL-neutral (+2.20%) on OPT-125M</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- ───────────────────────── Abstract ───────────────────────── -->
+<section class="wrap narrow" id="abstract">
+  <h2>Abstract</h2>
+  <p class="abstract">KV cache compression makes two promises to a distributed LLM serving system: a compressed cache preserves model output, and shipping fewer bytes is faster. This paper shows that both promises fail unless checked against measured quantities. Fewer bytes are not automatically faster: codec, metadata, and consumer overhead can dominate small transfers, so a compressed path beats fp16 transport only above a link- and size-dependent crossover, and on a measured same-GPU path it never pays at all. Fewer bytes are not automatically safe either: aggressive quantization can violate a quality target — uniform INT4 collapses a 3B model while remaining PPL-neutral at 125M scale — so the admissible compression ratio is model-dependent. We therefore propose a measurement-calibrated runtime framework that decides when compression is worth deploying by accounting quality, latency, and memory jointly: (i) an adaptive INT4/INT8/FP16 codec enforces a writer-verified per-write reconstruction budget, checked on the actual packed representation at every write; (ii) a fixed-cost-aware transport ledger accounts codec, metadata, transfer, and consumer costs and yields a closed-form crossover; (iii) a profile-based deployment resolver returns the highest-compression feasible operating point or explicit infeasibility from measured profiles and operator constraints. The resolver selects certified B=0.2 under a 1% PPL-degradation SLO and B=0.5 under 3%, admits a uniform-INT4 point only for the smallest model at a 5% SLO, and prefers fp16 on the same-GPU path. The strongest result is negative: compression may not pay — its benefit is link- and size-dependent, model-dependent KV magnitudes bound the achievable ratio, and no single compression ratio is universally deployable.</p>
+</section>
+
+<!-- ───────────────────────── Video ───────────────────────── -->
+<section class="wrap" id="video">
+  <h2>Video</h2>
+  <div class="video-box">
+    <video controls preload="metadata" playsinline poster="static/video-poster.jpg">
+      <source src="static/video.mp4" type="video/mp4">
+    </video>
+  </div>
+</section>
+
+<!-- ───────────────────────── Method ───────────────────────── -->
+<section class="wrap" id="method">
+  <h2>From “pick a ratio” to “resolve a contract”</h2>
+  <p class="lead">Instead of choosing a compression ratio and checking quality afterwards, we start from the operator’s constraints and resolve them into a deployable operating point.</p>
+  <div class="card contrast">
+    <div class="flow-row">
+      <div class="flow-tag muted">Existing<br><small>ratio → evaluate</small></div>
+      <div class="flow">
+        <div class="fnode">KV cache<small>fp16</small></div><div class="arrow">→</div>
+        <div class="fnode">Ratio r<small>pick r</small></div><div class="arrow">→</div>
+        <div class="fnode">Offline PPL<small>measured once</small></div><div class="arrow">→</div>
+        <div class="fnode">Deploy<small>“regression small enough”</small></div>
+      </div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-tag">Ours<br><small>SLA → contract → decide</small></div>
+      <div class="flow">
+        <div class="fnode sla">Operator SLA<small>(ε, τ, M)</small></div><div class="arrow">→</div>
+        <div class="contract">
+          <div class="contract-label">Deployment contract</div>
+          <div class="fnode in">Codec<small>error curve</small></div>
+          <div class="fnode in">Transport<small>ledger</small></div>
+          <div class="fnode in">Verify<small>gate G2 per write</small></div>
+        </div><div class="arrow">→</div>
+        <div class="fnode out">Operating point<small>or explicit infeasibility</small></div>
+      </div>
+    </div>
+  </div>
+
+  <figure class="card arch" aria-label="Serving architecture">
+    <div class="arch-lane">
+      <div class="lane-label">Prefill worker<br><small>live vLLM engine, paged KV</small></div>
+      <div class="arch-flow">
+        <div class="node">vLLM Scheduler<small>block tables, slots</small></div>
+        <div class="arrow">→</div>
+        <div class="node">PagedAttention<small>KV write</small></div>
+        <div class="arrow">→</div>
+        <div class="node accent">Certificate layer<small>pre-pass → select(B) → G2</small></div>
+        <div class="arrow">→</div>
+        <div class="node">Compressed KV store<small>payload + scales + modes</small></div>
+        <div class="arrow">→</div>
+        <div class="node">Export: D2H<small>pinned copy</small></div>
+      </div>
+    </div>
+    <div class="arch-mid">
+      <div class="envelope"><strong>Certificate envelope</strong> B · mode map · fp32 scales · G2 verdict · sha256</div>
+      <div class="transport">⇣ host relay <span>or</span> dual-GPU PCIe P2P ⇣</div>
+    </div>
+    <div class="arch-lane">
+      <div class="lane-label">Decode worker<br><small>DynamicCache</small></div>
+      <div class="arch-flow reverse">
+        <div class="node">Import: H2D<small>pinned copy</small></div>
+        <div class="arrow">→</div>
+        <div class="node accent">Unpack + dequantize<small>verify sha256</small></div>
+        <div class="arrow">→</div>
+        <div class="node">DynamicCache<small>per-layer K/V</small></div>
+        <div class="arrow">→</div>
+        <div class="node">Greedy decode<small>no prefill attention</small></div>
+      </div>
+    </div>
+    <figcaption>Per 128-element block, the pre-pass computes candidate INT4/INT8 errors, the mode is selected under budget B, and gate G2 verifies the actual reconstruction before the write commits.</figcaption>
+  </figure>
+
+  <div class="three-col">
+    <div class="card comp">
+      <div class="comp-num">1</div>
+      <h3>Error-bounded adaptive codec</h3>
+      <div class="eq small">$$\text{mode}(b)=\begin{cases}\text{INT4}, & e_4(b)\le B\\ \text{INT8}, & e_8(b)\le B\\ \text{FP16}, & \text{otherwise}\end{cases}$$</div>
+      <p>Each block takes the cheapest precision whose error fits the budget B. Every write is verified on its actual packed representation.</p>
+    </div>
+    <div class="card comp">
+      <div class="comp-num">2</div>
+      <h3>Fixed-cost-aware transport ledger</h3>
+      <div class="eq small">$$S^{*}_{16} = \frac{\Delta\alpha + \Delta T_c}{\beta_{\text{link}}\,(1 - 1/r)}$$</div>
+      <p>Codec, metadata, transfer, and consumer costs are counted together, which gives a closed-form crossover chunk size per link.</p>
+    </div>
+    <div class="card comp">
+      <div class="comp-num">3</div>
+      <h3>Measured-profile deployment resolver</h3>
+      <p>Given the operator’s quality, latency, and memory constraints, the resolver returns the highest-compression feasible point, fp16, or explicit infeasibility. Any bounded-error codec plugs in through three curves: error, latency, and bytes.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Crossover ───────────────────────── -->
+<section class="wrap" id="crossover">
+  <h2>Fewer bytes ≠ faster</h2>
+  <p class="lead">Fixed codec costs dominate small transfers, so compression pays only above a crossover chunk size that depends on the link. Drag the chunk size and switch links.</p>
+
+  <div class="card viz">
+    <div class="controls" role="group" aria-label="Crossover controls">
+      <div class="seg" id="linkSeg" role="radiogroup" aria-label="Link">
+        <button type="button" data-link="pcie" class="on" role="radio" aria-checked="true">PCIe</button>
+        <button type="button" data-link="proxy" role="radio" aria-checked="false">Same-GPU</button>
+        <button type="button" data-link="p2p" role="radio" aria-checked="false">Dual-GPU P2P</button>
+      </div>
+      <label class="slider-label">fp16 chunk size <output id="sizeOut">2 MB</output>
+        <input type="range" id="sizeSlider" min="0" max="1000" value="0" aria-label="fp16 chunk size">
+      </label>
+    </div>
+    <div id="crossChart" class="chart"></div>
+    <div class="legend" id="crossLegend"></div>
+    <p class="verdict" id="crossVerdict" aria-live="polite"></p>
+  </div>
+</section>
+
+<!-- ───────────────────────── Quality ───────────────────────── -->
+<section class="wrap" id="quality">
+  <h2>Fewer bytes ≠ safe</h2>
+  <p class="lead">WikiText-2 perplexity degradation per model and codec. Pick a quality SLO: the admissible ratio changes from model to model.</p>
+
+  <div class="card viz">
+    <div class="controls">
+      <div class="seg" id="sloSeg" role="radiogroup" aria-label="Quality SLO">
+        <button type="button" data-slo="1" class="on" role="radio" aria-checked="true">ΔPPL ≤ 1%</button>
+        <button type="button" data-slo="3" role="radio" aria-checked="false">≤ 3%</button>
+        <button type="button" data-slo="5" role="radio" aria-checked="false">≤ 5%</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="slo-matrix" id="sloMatrix"></table>
+    </div>
+  </div>
+
+  <div class="card viz">
+    <h3 class="viz-title">Why INT4 breaks at scale</h3>
+    <p class="viz-sub">Worst-case per-block KV magnitude m* grows with model size (log scale). INT4 error is m/14, so it grows with it.</p>
+    <div id="magChart" class="chart"></div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Resolver ───────────────────────── -->
+<section class="wrap" id="resolver">
+  <h2>Try the deployment resolver</h2>
+  <p class="lead">Set the quality, latency, and memory constraints for a 2 MiB KV chunk. The resolver filters the candidates and returns the highest-compression point that satisfies all three, or tells you not to compress.</p>
+
+  <div class="card viz resolver">
+    <div class="resolver-grid">
+      <div class="resolver-inputs">
+        <label>Model
+          <select id="rModel">
+            <option>OPT-125M</option>
+            <option selected>TinyLlama-1.1B</option>
+            <option>Qwen2.5-3B</option>
+          </select>
+        </label>
+        <label>Quality SLO ε (ΔPPL)
+          <select id="rSlo">
+            <option value="1">≤ 1% (strict)</option>
+            <option value="3" selected>≤ 3% (moderate)</option>
+            <option value="5">≤ 5% (relaxed)</option>
+          </select>
+        </label>
+        <label>Link
+          <select id="rLink">
+            <option value="pcie" selected>PCIe</option>
+            <option value="proxy">Same-GPU</option>
+          </select>
+        </label>
+        <label>Latency SLO τ <output id="rTauOut"></output>
+          <input type="range" id="rTau" min="100" max="260" step="1" value="260">
+        </label>
+        <label>Memory budget M <output id="rMemOut"></output>
+          <input type="range" id="rMem" min="400" max="2048" step="1" value="2048">
+        </label>
+        <div class="presets">
+          <span>Try:</span>
+          <button type="button" data-preset="opt5">OPT ≤5% → INT4</button>
+          <button type="button" data-preset="tiny700">TinyLlama, M=700 KB</button>
+          <button type="button" data-preset="proxy">Same-GPU</button>
+          <button type="button" data-preset="tau">τ &lt; 130 µs</button>
+        </div>
+      </div>
+      <div class="resolver-out">
+        <div class="verdict-card" id="rVerdict" aria-live="polite"></div>
+        <div class="table-scroll">
+          <table class="cand" id="rTable"></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="stat-label">Verified writes on live vLLM paged KV</div>
+      <div class="stat-value">220 / 220</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Certificate tax at 1 MB</div>
+      <div class="stat-value">27.6 µs</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Fused codec for 23–92 MB of KV</div>
+      <div class="stat-value">0.57–1.16 ms</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Greedy continuation vs fp16</div>
+      <div class="stat-value">32 / 32</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Future work ───────────────────────── -->
+<section class="wrap" id="future">
+  <h2>Future work</h2>
+  <div class="future-grid">
+    <div class="card fw"><h3>More links</h3><p>Measure the crossover on NVLink, RDMA/InfiniBand, and inter-node networks.</p></div>
+    <div class="card fw"><h3>Pipelined transfers</h3><p>Extend the ledger to overlapped codec, transfer, and decode.</p></div>
+    <div class="card fw"><h3>Larger models and tasks</h3><p>Calibrate quality on larger models, long-context workloads, and downstream tasks.</p></div>
+    <div class="card fw"><h3>Native serving path</h3><p>Run decode on vLLM’s own attention kernels and report TTFT, inter-token latency, and throughput under concurrency.</p></div>
+    <div class="card fw"><h3>From KV error to output quality</h3><p>Connect the per-write bound to attention-output and task-level quality.</p></div>
+    <div class="card fw"><h3>Online resolver</h3><p>Adapt the operating point online with INT2/INT3 modes and per-layer budgets.</p></div>
+  </div>
+</section>
+
+<!-- ───────────────────────── BibTeX ───────────────────────── -->
+<section class="wrap" id="bibtex">
+  <h2>BibTeX</h2>
+  <div class="bib">
+    <button type="button" class="copy" id="copyBib">Copy</button>
+<pre id="bibText">@inproceedings{fan2026kvpay,
+  title     = {When Does {KV} Cache Compression Pay? A Quality- and Cost-Aware
+               Runtime Framework for Cloud {LLM} Serving},
+  author    = {Fan, Yuchen},
+  booktitle = {Proceedings of the International Conference on Green, Pervasive,
+               and Cloud Computing (GPC)},
+  year      = {2026}
+}</pre>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap"><p>© 2026 Yuchen Fan · Beijing Institute of Technology</p></div>
+</footer>
+
+<div class="tooltip" id="tooltip" role="tooltip"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script src="assets/hero.js"></script>
+</body>
+</html>
